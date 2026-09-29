@@ -1,0 +1,182 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrderType {
+  PROMPT
+  SESSION
+}
+
+enum OrderStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum LedgerKind {
+  TOPUP
+  HOLD
+  EARN
+  REFUND
+  WITHDRAW
+}
+
+model User {
+  id              String    @id @default(cuid())
+  name            String?
+  email           String?   @unique
+  emailVerified   DateTime?
+  image           String?
+  githubLogin     String?   @unique
+  balance         Int       @default(0)
+  withdrawable    Int       @default(0)
+  stripeAccountId String?   @unique
+  createdAt       DateTime  @default(now())
+
+  accounts     Account[]
+  seller       SellerProfile?
+  buyerOrders  Order[]        @relation("buyer")
+  sellerOrders Order[]        @relation("seller")
+  reviewsGiven Review[]       @relation("reviewer")
+  ledger       LedgerEntry[]
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@index([userId])
+}
+
+model SellerProfile {
+  userId          String   @id
+  bio             String   @default("")
+  stack           String[]
+  tools           String[]
+  isActive        Boolean  @default(true)
+  ratePer10k      Int
+  sessionPrice    Int
+  sessionMinutes  Int
+  sessionTokenCap Int
+  reviewCount     Int      @default(0)
+  behaviorSum     Int      @default(0)
+  responseSum     Int      @default(0)
+  answeredCount   Int      @default(0)
+  responseMsSum   BigInt   @default(0)
+  ratingAvg       Float    @default(0)
+  avgResponseMs   Int?
+  createdAt       DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews Review[]
+
+  @@index([isActive, ratingAvg])
+  @@index([isActive, avgResponseMs])
+  @@index([isActive, ratePer10k])
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  buyerId        String
+  sellerId       String
+  type           OrderType
+  status         OrderStatus @default(PENDING)
+  held           Int
+  charged        Int         @default(0)
+  tokenCap       Int
+  tokensUsed     Int         @default(0)
+  ratePer10k     Int
+  sessionMinutes Int?
+  repoOwner      String
+  repoName       String
+  baseBranch     String
+  workBranch     String?
+  baseSha        String?
+  lastSha        String?
+  prNumber       Int?
+  inviteId       Int?
+  acceptedAt     DateTime?
+  endsAt         DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime    @default(now())
+
+  buyer   User          @relation("buyer", fields: [buyerId], references: [id])
+  seller  User          @relation("seller", fields: [sellerId], references: [id])
+  prompts Prompt[]
+  review  Review?
+  ledger  LedgerEntry[]
+
+  @@index([buyerId, status])
+  @@index([sellerId, status])
+  @@index([status, endsAt])
+  @@index([status, createdAt])
+}
+
+model Prompt {
+  id             String    @id @default(cuid())
+  orderId        String
+  content        String
+  submittedAt    DateTime  @default(now())
+  fromSha        String?
+  toSha          String?
+  answerNote     String?
+  answerTokens   Int?
+  uncountedFiles String[]
+  answeredAt     DateTime?
+  responseMs     Int?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, submittedAt])
+}
+
+model Review {
+  id            String   @id @default(cuid())
+  orderId       String   @unique
+  buyerId       String
+  sellerId      String
+  behaviorStars Int
+  responseStars Int
+  comment       String   @default("")
+  createdAt     DateTime @default(now())
+
+  order  Order         @relation(fields: [orderId], references: [id])
+  buyer  User          @relation("reviewer", fields: [buyerId], references: [id])
+  seller SellerProfile @relation(fields: [sellerId], references: [userId])
+
+  @@index([sellerId, createdAt])
+}
+
+model LedgerEntry {
+  id        String     @id @default(cuid())
+  userId    String
+  amount    Int
+  kind      LedgerKind
+  orderId   String?
+  stripeRef String?    @unique
+  createdAt DateTime   @default(now())
+
+  user  User   @relation(fields: [userId], references: [id])
+  order Order? @relation(fields: [orderId], references: [id])
+
+  @@index([userId, createdAt])
+}
